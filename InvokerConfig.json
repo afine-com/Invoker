@@ -1,0 +1,47 @@
+[
+  {
+  "global_raw_folder": "/tmp/{{HOST}}"
+  },
+  {
+    "name": "dosfiner auto GET/POST",
+    "tool": "dosfiner",
+    "template": "go run dosfiner.go {{METHOD_SWITCH}} -u \"{{URL}}\" -d \"{{BODY}}\" {{FORCE_SSL}} {{HEADERS[-H]}} -t 9999 -proxy \"http://127.0.0.1:{{PROXY_PORT}}\""
+  },
+  {
+    "name": "dosfiner raw (-r) Best for Other methods",
+    "tool": "dosfiner",
+    "raw_folder": "/tmp/dosfiner_raw",
+    "template": "go run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 -proxy \"http://127.0.0.1:{{PROXY_PORT}}\" {{FORCE_SSL}}"
+  },
+  {
+    "name": "sqlmap auto SSL",
+    "tool": "sqlmap",
+    "template": "sqlmap -u \"{{URL}}\" {{FORCE_SSL}} {{HEADERS[-H]}} --batch --output-dir \"{{OUTPUT}}\""
+  },
+  {
+    "name": "sqlmap -r",
+    "tool": "sqlmap",
+    "raw_folder": "/tmp/sqlmap_raw",
+    "template": "sqlmap -r \"{{RAW_PATH}}\" --level 5 --risk 3 {{FORCE_SSL}} --batch --output-dir \"{{OUTPUT}}\""
+  },
+  {
+    "name": "FFUF fuzz",
+    "tool": "ffuf",
+    "template": "ffuf -u \"{{FFUF_URL}}\" -w /path/to/wordlist.txt {{FORCE_SSL}} -mc 200,403 -o \"{{OUTPUT}}\" -of json"
+  },
+  {
+    "name": "nuclei normal",
+    "tool": "nuclei",
+    "template": "nuclei -target \"{{URL}}\" -o \"{{OUTPUT}}\" -jsonl"
+  },
+  {
+    "name": "tplmap basic",
+    "tool": "tplmap",
+    "template": "tplmap -u \"{{URL}}\" --random-agent"
+  },
+  {
+    "name": "nuclei CVEs",
+    "tool": "nuclei",
+    "template": "nuclei -target \"{{URL}}\" -t cves/ -severity high {{FORCE_SSL}} -o nuclei_result.txt"
+  }
+]
