@@ -2,8 +2,6 @@
 
 ---
 
-### 2b) Sample README for **the Burp Extension** (Invoker / multi-tool generator)
-
 <details>
 <summary>Click to expand sample README.md</summary>
 
