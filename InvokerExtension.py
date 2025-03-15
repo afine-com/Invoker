@@ -6,6 +6,8 @@ import inspect
 import re
 import time
 import random
+import sys
+import codecs
 
 from burp import IBurpExtender
 from burp import IContextMenuFactory
@@ -19,20 +21,28 @@ from java.util import ArrayList
 class BurpExtender(IBurpExtender, IContextMenuFactory):
 
     def registerExtenderCallbacks(self, callbacks):
+        writer_out = codecs.getwriter('utf-8')(callbacks.getStdout())
+        writer_out.errors = 'replace'
+        sys.stdout = writer_out
+
+        writer_err = codecs.getwriter('utf-8')(callbacks.getStderr())
+        writer_err.errors = 'replace'
+        sys.stderr = writer_err
+
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self._callbacks.setExtensionName("Invoker Extension")
+
         print("=====================================================")
-        print(" DoS Finder - by Paweł Zdunek (AFINE)")
+        print(" Invoker - by Paweł Zdunek (AFINE)")
         print("=====================================================")
 
         self.base_path = self.determineBasePath()
 
-        # Domyślnie, jeśli user nie ustawi nic:
         self.global_raw_folder_template = "/tmp/{{HOST}}"
 
         self.commands_config = []
-        self.authenticatedHeaders = None  # do SetAsAuth
+        self.authenticatedHeaders = None
 
         self.loadConfigFromFile()
         callbacks.registerContextMenuFactory(self)
@@ -62,7 +72,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                 self.commands_config = []
                 return
 
-            # Jeśli pierwszy element ma "global_raw_folder"
             if len(parsed) > 0 and "global_raw_folder" in parsed[0]:
                 self.global_raw_folder_template = parsed[0]["global_raw_folder"]
                 self.commands_config = parsed[1:]
@@ -77,14 +86,12 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             self.commands_config = []
 
     #
-    # IContextMenuFactory
     #
     def createMenuItems(self, invocation):
         menu_items = ArrayList()
         tool_flag = invocation.getToolFlag()
 
         if tool_flag == self._callbacks.TOOL_REPEATER:
-            # Add "Set as Authenticated Request"
             set_auth = JMenuItem("Set as Authenticated Request",
                 actionPerformed=lambda x, inv=invocation: self.setAsAuthenticatedRequest(inv)
             )
@@ -130,7 +137,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         req_info = self._helpers.analyzeRequest(ihrr)
         headers = req_info.getHeaders()
 
-        # omijamy Content-Length
         user_headers = []
         for h in headers[1:]:
             if h.lower().startswith("content-length"):
@@ -138,14 +144,9 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             user_headers.append(h)
 
         self.authenticatedHeaders = user_headers
-        JOptionPane.showMessageDialog(None,
-            "Authenticated Request set.\nThese headers will be used for future requests in Targets tab.",
-            "InvokerExtension",
-            JOptionPane.INFORMATION_MESSAGE
-        )
+        self.showInfoDialog("Authenticated Request set.\nThese headers will be used for future requests in Targets tab.")
 
     #
-    # Repeater => single
     #
     def onMenuClickRepeater(self, invocation, config_entry):
         messages = invocation.getSelectedMessages()
@@ -160,7 +161,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             return
         (cmd, ffuf_url) = result
 
-        # copy to clipboard
         try:
             cb = Toolkit.getDefaultToolkit().getSystemClipboard()
             sel = StringSelection(cmd)
@@ -168,50 +168,57 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         except:
             pass
 
-        JOptionPane.showMessageDialog(None,
-            "Command copied:\n\n" + cmd,
-            "InvokerExtension",
-            JOptionPane.INFORMATION_MESSAGE
-        )
+        self.showInfoDialog("Command copied:\n\n" + cmd)
         print("[Invoker] Repeater single command:\n" + cmd)
 
     #
-    # Targets => multi => .sh
     #
     def onMenuClickTargets(self, invocation, config_entry):
         messages = invocation.getSelectedMessages()
         if not messages or len(messages) == 0:
             return
 
-        # if user selected only 1 node with path = "/" => expand siteMap
         if len(messages) == 1:
             single = messages[0]
-            req_info = self._helpers.analyzeRequest(single)
-            url_obj = req_info.getUrl()
-            path = url_obj.getPath()
-            if path == "/" or path == "":
-                host = url_obj.getHost()
-                port = url_obj.getPort()
-                protocol = url_obj.getProtocol()
-                if port == -1:
-                    prefix = "%s://%s" % (protocol, host)
-                else:
-                    prefix = "%s://%s:%d" % (protocol, host, port)
-                site_msgs = self._callbacks.getSiteMap(prefix)
-                if site_msgs:
-                    messages = site_msgs
+            if single is not None and single.getRequest() is not None:
+                req_info = self._helpers.analyzeRequest(single)
+                if req_info is not None:
+                    url_obj = req_info.getUrl()
+                    if url_obj is not None:
+                        path = url_obj.getPath()
+                        if path == "/" or path == "":
+                            host = url_obj.getHost()
+                            port = url_obj.getPort()
+                            protocol = url_obj.getProtocol()
+                            if port == -1:
+                                prefix = "%s://%s" % (protocol, host)
+                            else:
+                                prefix = "%s://%s:%d" % (protocol, host, port)
+                            site_msgs = self._callbacks.getSiteMap(prefix)
+                            if site_msgs:
+                                messages = site_msgs
 
         commands = []
         warnings = []
         used_ffuf_urls = set()
 
         for ihrr in messages:
-            result = self.buildCommandForOneRequest(ihrr, config_entry, from_target=True, warnings=warnings)
+            if ihrr is None:
+                continue
+            if ihrr.getRequest() is None:
+                continue
+
+            try:
+                result = self.buildCommandForOneRequest(ihrr, config_entry, from_target=True, warnings=warnings)
+            except Exception as ex:
+                warnings.append("Error building command for one request: %s" % str(ex))
+                continue
+
             if not result:
                 continue
+
             (cmd, ffuf_url) = result
 
-            # deduplicate ffuf
             if ffuf_url:
                 if ffuf_url in used_ffuf_urls:
                     warnings.append("Skipping duplicate FFUF URL => %s" % ffuf_url)
@@ -224,20 +231,13 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             msg = "No commands were generated."
             if warnings:
                 msg += "\n\nWarnings:\n- " + "\n- ".join(warnings)
-            JOptionPane.showMessageDialog(
-                None, msg, "InvokerExtension",
-                JOptionPane.WARNING_MESSAGE
-            )
+            self.showWarnDialog(msg)
             return
 
-        # zapisz do pliku .sh w <global_raw_folder> (po zastepieniu {{HOST}})
-        # Problem: w multi-requestach może być wiele hostów. Wybierzmy host 1szy? Albo 'multi'?
-        # Dla prostoty: bierzemy host z 1 requestu
-        first = messages[0]
-        fi_reqinfo = self._helpers.analyzeRequest(first)
+        first_valid = messages[0]
+        fi_reqinfo = self._helpers.analyzeRequest(first_valid)
         fi_host = fi_reqinfo.getUrl().getHost()
 
-        # Tworzymy final global folder
         final_global_folder = self.resolveGlobalFolder(fi_host)
         if not os.path.exists(final_global_folder):
             os.makedirs(final_global_folder)
@@ -246,50 +246,76 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         filename = "invoker_commands_%d.sh" % timestamp
         full_path = os.path.join(final_global_folder, filename)
 
+        file_ok = True
         try:
-            with open(full_path, "w") as f:
+            import codecs
+            with codecs.open(full_path, "w", "utf-8", errors="replace") as f:
                 for c in commands:
-                    f.write(c + "\n")
+                    f.write(c)
+                    f.write(u"\n")
+        except Exception as e:
+            file_ok = False
+            warnings.append("Error writing commands file: %s" % str(e))
 
-            # copy sciezke do schowka
+        copied_to_clipboard = False
+        if file_ok:
             try:
                 cb = Toolkit.getDefaultToolkit().getSystemClipboard()
                 sel = StringSelection(full_path)
                 cb.setContents(sel, None)
-            except:
-                pass
+                copied_to_clipboard = True
+            except Exception as e:
+                warnings.append("Error copying path to clipboard: %s" % str(e))
 
-            msg = "Generated %d commands.\nSaved to %s" % (len(commands), full_path)
-            if warnings:
-                msg += "\n\nWarnings:\n- " + "\n- ".join(warnings)
-            msg += "\n\n(Path copied to clipboard.)"
+        msg = "Generated %d commands." % len(commands)
+        if file_ok:
+            msg += "\nSaved to %s" % full_path
+        else:
+            msg += "\n(No output file was created.)"
 
-            JOptionPane.showMessageDialog(None,
-                msg, "InvokerExtension",
-                JOptionPane.INFORMATION_MESSAGE
-            )
-            print("[Invoker] Targets multi commands =>", full_path)
+        if copied_to_clipboard:
+            msg += "\n(Path copied to clipboard.)"
+        else:
+            msg += "\n(Path NOT copied to clipboard.)"
 
-        except Exception as e:
-            JOptionPane.showMessageDialog(None,
-                "Error writing commands file:\n" + str(e),
-                "InvokerExtension",
-                JOptionPane.ERROR_MESSAGE
-            )
+        if warnings:
+            msg += "\n\nWarnings:\n- " + "\n- ".join(warnings)
+
+        self.showInfoDialog(msg)
+        print("[Invoker] Targets multi commands =>", full_path if file_ok else "(no file)")
 
     #
-    # Główna metoda
     #
     def buildCommandForOneRequest(self, ihrr, config_entry, from_target, warnings):
+        if ihrr is None or ihrr.getRequest() is None:
+            return None
+
         req_info = self._helpers.analyzeRequest(ihrr)
-        method = req_info.getMethod()
+        if req_info is None:
+            return None
         url_obj = req_info.getUrl()
-        url_str = str(url_obj)
+        if url_obj is None:
+            return None
+
+        url_str = self.safeUrlToString(url_obj)
+
+        method = req_info.getMethod()
+
+        try:
+            method = method.encode("utf-8", "replace")
+            method = method.decode("utf-8", "replace")
+        except:
+            method = "UNKNOWN_METHOD"
 
         body_offset = req_info.getBodyOffset()
         all_bytes = ihrr.getRequest()
         body = all_bytes[body_offset:]
-        body_str = self._helpers.bytesToString(body)
+
+        try:
+            body_str = self._helpers.bytesToString(body)
+        except:
+            body_str = self.hexFallback(body)
+
         body_str_escaped = body_str.replace('"', '\\"')
 
         orig_headers = req_info.getHeaders()
@@ -301,12 +327,11 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
 
         if from_target and self.authenticatedHeaders is not None:
             user_headers = self.authenticatedHeaders
-        elif from_target and self.authenticatedHeaders is None:
-            if warnings is not None:
-                warnings.append("No Auth set => used original headers for " + url_str)
+        elif from_target and self.authenticatedHeaders is None and warnings is not None:
+            warnings.append("No Auth set => used original headers for " + url_str)
 
         tool = config_entry.get("tool", "").lower()
-        method_switch, force_ssl_flag, skipTool = self.applySmartLogic(tool, method, url_obj)
+        (method_switch, force_ssl_flag, skipTool) = self.applySmartLogic(tool, method, url_obj)
         if skipTool:
             if warnings is not None:
                 warnings.append("%s skip => method=%s at %s" % (tool, method, url_str))
@@ -325,7 +350,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
 
         cmd = self.replaceHeadersMultiFlag(cmd, user_headers)
 
-        # ffuf deduplik
         ffuf_url = None
         if tool == "ffuf":
             if "{{FFUF_URL}}" in cmd:
@@ -333,12 +357,10 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                 cmd = cmd.replace("{{FFUF_URL}}", fu)
                 ffuf_url = fu
 
-        # if w template jest {{OUTPUT}} => generujemy plik w results/
         if "{{OUTPUT}}" in cmd:
             out_path = self.makeOutputFilename(tool, url_obj)
             cmd = cmd.replace("{{OUTPUT}}", out_path)
 
-        # if {{RAW_PATH}} => surowy request do requests/
         if "{{RAW_PATH}}" in cmd:
             raw_path = self.saveRawRequest(ihrr, from_target, user_headers)
             cmd = cmd.replace("{{RAW_PATH}}", raw_path)
@@ -346,12 +368,32 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         return (cmd, ffuf_url)
 
     #
-    # Tworzy sciezke do zapisu wynikow:
-    # finalGlobalFolder = self.resolveGlobalFolder(host)
-    # -> finalGlobalFolder/results/<tool>_<host>_<pathSegment>_<timestamp>_<rnd>.json
     #
+    def safeUrlToString(self, url_obj):
+        if not url_obj:
+            return "invalid_url"
+
+        try:
+            raw_java_str = url_obj.toString()
+            utf = raw_java_str.encode("utf-8", "replace")
+            safe_str = utf.decode("utf-8", "replace")
+            return safe_str
+        except:
+            return "invalid_url"
+
+    #
+    #
+    def hexFallback(self, data_bytes):
+        escaped = []
+        for b in data_bytes:
+            val = b
+            if val < 0:
+                val += 256
+            escaped.append("\\x%02x" % val)
+        return "".join(escaped)
+
     def makeOutputFilename(self, tool, url_obj):
-        final_folder = self.resolveGlobalFolder(url_obj.getHost())  # np /tmp/localhost
+        final_folder = self.resolveGlobalFolder(url_obj.getHost())
         results_folder = os.path.join(final_folder, "results")
         if not os.path.exists(results_folder):
             os.makedirs(results_folder)
@@ -370,12 +412,15 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         filename = "%s_%s_%s_%d_%d.json" % (tool, url_obj.getHost(), seg, timestamp, rnd)
         return os.path.join(results_folder, filename)
 
-    #
-    # Zapis surowego requestu: <finalGlobalFolder>/requests/invoker_timestamp_rand.req
-    #
     def saveRawRequest(self, ihrr, from_target, user_headers):
         req_info = self._helpers.analyzeRequest(ihrr)
-        host = req_info.getUrl().getHost()
+        if req_info is None:
+            return "/tmp/invoker_failed.req"
+        url_obj = req_info.getUrl()
+        if url_obj is None:
+            return "/tmp/invoker_failed.req"
+
+        host = url_obj.getHost()
         final_folder = self.resolveGlobalFolder(host)
         requests_folder = os.path.join(final_folder, "requests")
 
@@ -388,17 +433,18 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             filename = "invoker_%d_%d.req" % (timestamp, rnd)
             full_path = os.path.join(requests_folder, filename)
 
+            req_bytes = ihrr.getRequest()
             if not from_target:
-                req_bytes = ihrr.getRequest()
                 with open(full_path, "wb") as f:
                     f.write(req_bytes)
             else:
-                # reconstruct with user_headers
                 original_headers = req_info.getHeaders()
+                if original_headers is None or len(original_headers) == 0:
+                    return "/tmp/invoker_failed.req"
+
                 start_line = original_headers[0]
                 body_offset = req_info.getBodyOffset()
-                all_bytes = ihrr.getRequest()
-                body_bytes = all_bytes[body_offset:]
+                body_bytes = req_bytes[body_offset:]
 
                 lines = [start_line]
                 for h in user_headers:
@@ -408,7 +454,7 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                 top = "\r\n".join(lines) + "\r\n\r\n"
 
                 with open(full_path, "wb") as f:
-                    f.write(top.encode("utf-8"))
+                    f.write(top.encode("utf-8", "replace"))
                     f.write(body_bytes)
 
             return full_path
@@ -416,53 +462,45 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             print("[InvokerExtension] Error saving raw request:", e)
             return "/tmp/invoker_failed.req"
 
-    #
-    # Zamienia w self.global_raw_folder_template np "/tmp/{{HOST}}"
-    # na "/tmp/localhost" (jeśli host=localhost)
-    #
     def resolveGlobalFolder(self, host):
         return self.global_raw_folder_template.replace("{{HOST}}", host)
 
-    #
-    # applySmartLogic -> dosfiner skip, etc.
-    #
     def applySmartLogic(self, tool, method, url_obj):
         method_switch = ""
         force_ssl_flag = ""
         skipTool = False
 
         is_https = (url_obj.getProtocol().lower() == "https")
+        t = tool.lower()
 
-        if tool == "dosfiner":
-            if method.upper() == "GET":
+        if t == "dosfiner":
+            meth_up = method.upper()
+            if meth_up == "GET":
                 method_switch = "-g"
-            elif method.upper() == "POST":
+            elif meth_up == "POST":
                 method_switch = "-p"
             else:
-                skipTool = True
+                method_switch = "-g"
             if is_https:
                 force_ssl_flag = "-force-ssl"
 
-        elif tool == "sqlmap":
+        elif t == "sqlmap":
             if is_https:
                 force_ssl_flag = "--force-ssl"
 
-        elif tool == "ffuf":
+        elif t == "ffuf":
             if is_https:
                 force_ssl_flag = "-ssl"
 
-        elif tool == "nuclei":
+        elif t == "nuclei":
             if is_https:
                 force_ssl_flag = "--force-ssl"
 
-        elif tool == "tplmap":
+        elif t == "tplmap":
             pass
 
         return (method_switch, force_ssl_flag, skipTool)
 
-    #
-    # Generuje URL do ffuf => wstawia /FUZZ
-    #
     def makeFfufUrl(self, url_obj):
         protocol = url_obj.getProtocol()
         host = url_obj.getHost()
@@ -513,3 +551,38 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         except:
             pass
         return default_port
+
+    def showInfoDialog(self, msg):
+        safe_msg = self.safeStringForDialog(msg)
+        JOptionPane.showMessageDialog(
+            None,
+            safe_msg,
+            "InvokerExtension",
+            JOptionPane.INFORMATION_MESSAGE
+        )
+
+    def showWarnDialog(self, msg):
+        safe_msg = self.safeStringForDialog(msg)
+        JOptionPane.showMessageDialog(
+            None,
+            safe_msg,
+            "InvokerExtension",
+            JOptionPane.WARNING_MESSAGE
+        )
+
+    def safeStringForDialog(self, txt):
+        """
+        Konwertuje 'txt' do formatu UTF-8 z replace,
+        a potem z powrotem do unicode – dzięki temu
+        wszelkie trudne znaki zostaną zastąpione `?`.
+        """
+        try:
+            if txt is None:
+                return "None"
+            if not isinstance(txt, basestring):
+                txt = str(txt)
+            tmp = txt.encode("utf-8", "replace")
+            safe_txt = tmp.decode("utf-8", "replace")
+            return safe_txt
+        except:
+            return "ConversionError"
