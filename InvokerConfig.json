@@ -5,34 +5,40 @@
   {
     "name": "dosfiner auto GET/POST",
     "tool": "dosfiner",
-    "template": "go run dosfiner.go {{METHOD_SWITCH}} -u \"{{URL}}\" -d \"{{BODY}}\" {{FORCE_SSL}} {{HEADERS[-H]}} -t 9999 -proxy \"http://127.0.0.1:{{PROXY_PORT}}\""
+    "template": "go run dosfiner.go {{METHOD_SWITCH}} -u \"{{URL}}\" -d \"{{BODY}}\" {{FORCE_SSL}} {{HEADERS[-H]}} -t 9999 -proxy \"http://127.0.0.1:8080\""
   },
   {
-    "name": "dosfiner raw (-r) Best for Other methods",
+    "name": "dosfiner raw (-r) Best for Other methods and File Uploads",
     "tool": "dosfiner",
     "raw_folder": "/tmp/dosfiner_raw",
-    "template": "go run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 -proxy \"http://127.0.0.1:{{PROXY_PORT}}\" {{FORCE_SSL}}"
+    "template": "go run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 -proxy \"http://127.0.0.1:8080\" {{FORCE_SSL}}"
+  },
+  {
+    "name": "dosfiner raw (-r) Best for Other methods and File Uploads (bash for loop)",
+    "tool": "dosfiner",
+    "raw_folder": "/tmp/dosfiner_raw",
+    "template": "for i in {1..1000}; do\ngo run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 {{FORCE_SSL}} \ndone"
   },
   {
     "name": "sqlmap auto SSL",
     "tool": "sqlmap",
-    "template": "sqlmap -u \"{{URL}}\" {{FORCE_SSL}} {{HEADERS[-H]}} --batch --output-dir \"{{OUTPUT}}\""
+    "template": "sqlmap -u \"{{URL}}\" {{FORCE_SSL}} {{HEADERS[-H]}} --batch"
   },
   {
     "name": "sqlmap -r",
     "tool": "sqlmap",
     "raw_folder": "/tmp/sqlmap_raw",
-    "template": "sqlmap -r \"{{RAW_PATH}}\" --level 5 --risk 3 {{FORCE_SSL}} --batch --output-dir \"{{OUTPUT}}\""
+    "template": "sqlmap -r \"{{RAW_PATH}}\" --level 5 --risk 3 {{FORCE_SSL}} --batch"
   },
   {
     "name": "FFUF fuzz",
     "tool": "ffuf",
-    "template": "ffuf -u \"{{FFUF_URL}}\" -w /path/to/wordlist.txt {{FORCE_SSL}} -mc 200,403 -o \"{{OUTPUT}}\" -of json"
+    "template": "ffuf -u \"{{FFUF_URL}}\" -w /path/to/wordlist.txt"
   },
   {
     "name": "nuclei normal",
     "tool": "nuclei",
-    "template": "nuclei -target \"{{URL}}\" -o \"{{OUTPUT}}\" -jsonl"
+    "template": "nuclei -target \"{{URL}}\" -o \"{{OUTPUT}}\""
   },
   {
     "name": "tplmap basic",
