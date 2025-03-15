@@ -44,10 +44,5 @@
     "name": "tplmap basic",
     "tool": "tplmap",
     "template": "tplmap -u \"{{URL}}\" --random-agent"
-  },
-  {
-    "name": "nuclei CVEs",
-    "tool": "nuclei",
-    "template": "nuclei -target \"{{URL}}\" -t cves/ -severity high {{FORCE_SSL}} -o nuclei_result.txt"
   }
 ]
