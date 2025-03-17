@@ -1,39 +1,36 @@
 [
   {
-  "global_raw_folder": "/tmp/{{HOST}}"
+    "global_raw_folder": "/tmp/{{HOST}}"
   },
   {
     "name": "dosfiner auto GET/POST",
     "tool": "dosfiner",
-    "template": "go run dosfiner.go {{METHOD_SWITCH}} -u \"{{URL}}\" -d \"{{BODY}}\" {{FORCE_SSL}} {{HEADERS[-H]}} -t 9999 -proxy \"http://127.0.0.1:8080\""
+    "template": "go run dosfiner.go {{METHOD_SWITCH}} -u \"{{URL}}\" -d \"{{BODY}}\" {{FORCE_SSL}} {{HEADERS[-H]}} -t 999 -proxy \"http://127.0.0.1:8080\""
   },
   {
     "name": "dosfiner raw (-r) Best for Other methods and File Uploads",
     "tool": "dosfiner",
-    "raw_folder": "/tmp/dosfiner_raw",
-    "template": "go run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 -proxy \"http://127.0.0.1:8080\" {{FORCE_SSL}}"
+    "template": "go run dosfiner.go -r \"{{RAW_PATH}}\" -t 500 -proxy \"http://127.0.0.1:8080\" {{FORCE_SSL}}"
   },
   {
-    "name": "dosfiner raw (-r) Best for Other methods and File Uploads (bash for loop)",
+    "name": "dosfiner raw (-r) in Bash loop (1000x)",
     "tool": "dosfiner",
-    "raw_folder": "/tmp/dosfiner_raw",
-    "template": "for i in {1..1000}; do\ngo run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 {{FORCE_SSL}} \ndone"
+    "template": "for i in {1..1000}; do\n  go run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999 {{FORCE_SSL}} \n done"
   },
   {
-    "name": "sqlmap auto SSL",
+    "name": "sqlmap auto",
     "tool": "sqlmap",
-    "template": "sqlmap -u \"{{URL}}\" {{FORCE_SSL}} {{HEADERS[-H]}} --batch"
+    "template": "sqlmap -u \"{{URL}}\" {{HEADERS[-H]}} --batch --level=5 --risk=3 --tables"
   },
   {
-    "name": "sqlmap -r",
+    "name": "sqlmap -r raw request",
     "tool": "sqlmap",
-    "raw_folder": "/tmp/sqlmap_raw",
-    "template": "sqlmap -r \"{{RAW_PATH}}\" --level 5 --risk 3 {{FORCE_SSL}} --batch"
+    "template": "sqlmap -r \"{{RAW_PATH}}\" --level 5 --risk 3 {{FORCE_SSL}} --batch --tables"
   },
   {
     "name": "FFUF fuzz",
     "tool": "ffuf",
-    "template": "ffuf -u \"{{FFUF_URL}}\" -w /path/to/wordlist.txt"
+    "template": "ffuf -u \"{{FFUF_URL}}\" -w /path/to/wordlist.txt {{HEADERS[-H]}} -mc 200,403 "
   },
   {
     "name": "nuclei normal",
@@ -44,5 +41,20 @@
     "name": "tplmap basic",
     "tool": "tplmap",
     "template": "tplmap -u \"{{URL}}\" --random-agent"
+  },
+  {
+    "name": "nikto http/https",
+    "tool": "nikto",
+    "template": "nikto -host \"{{HOST}}\" -port \"{{PORT}}\""
+  },
+  {
+    "name": "nmap basic",
+    "tool": "nmap",
+    "template": "nmap -p- -sV -sC -Pn --script vuln {{HOST}} -oA \"{{OUTPUT}}\""
+  },
+  {
+    "name": "nikto protocol-based",
+    "tool": "nikto",
+    "template": "nikto -host \"{{PROTOCOL}}://{{HOST}}:{{PORT}}\""
   }
 ]
