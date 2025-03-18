@@ -1,62 +1,106 @@
-</details>
 
----
+# Invoker Burp Extension 🚀
 
-<details>
-<summary>Click to expand sample README.md</summary>
+**Invoker** is a Burp Suite extension that automates penetration testing with external tools. It integrates popular programs such as Dosfiner, sqlmap, nuclei, ffuf, tplmap, nikto, and nmap directly into the Burp Suite interface. Pentesters can now launch these tools with just one click, automatically passing data from the currently selected HTTP request.
 
-```markdown
-# Burp Invoker Extension
+## 🎯 Key Benefits
+- **Time Saving:** No more manual copying URLs, headers, or cookies to CLI tools.
+- **Error Reduction:** Automatically generated commands significantly reduce human errors.
+- **Bulk Testing:** Generate scripts for multiple endpoints at once.
+- **Authenticated Scanning:** Easily reuse session cookies and headers.
 
-**Burp Invoker** is a Jython-based Burp Suite extension that generates CLI commands for various security tools (like `dosfiner`, `sqlmap`, `ffuf`, `nuclei`, etc.) directly from requests in Burp. It supports:
+## 🛠️ Installation
 
-- Generating commands from Repeater requests  
-- Capturing headers, body, method, proxy settings  
-- Copying the final command to the clipboard or writing multi-request commands to a file  
-- Automatic logic for GET vs POST, SSL flags, raw request saving, etc.
+### Step 1: Clone the Repository
 
-## Installation
+```bash
+git clone https://github.com/afine-com/Invoker.git
+cd Invoker
+```
 
-1. Download the Jython standalone JAR (e.g. `jython-standalone-2.7.2.jar`).
-2. In Burp Suite → Extender → Options → Add the Jython JAR as your Python Environment.
-3. In Burp → Extender → Extensions → Add → Python: select `InvokerExtension.py`.
-4. Check Burp Extender logs for successful load.
+### Step 2: Load into Burp Suite
 
-## Usage
+- Open **Burp Suite**.
+- Navigate to the **Extensions** tab.
+- Click **Add** and select the file `InvokerExtension.py`.
 
-- In **Repeater**, right-click → **Invoker** → choose a tool (like `dosfiner` or `sqlmap`).  
-- The extension auto-detects request method, URL, headers, body.  
-- A command string is generated and copied to your clipboard (and shown in a popup).  
-- For multiple selected requests (in Target), it can produce a `.sh` file with lines for each request, or copy the path to the clipboard.
+### Step 3: Configure `InvokerConfig.json`
 
-### Example: Generating dosfiner commands
-1. Right-click on a request in Repeater → *"Invoker → Doser auto GET/POST"*.  
-2. A command like `go run dosfiner.go -g -u "http://example.com" -t 100 ...` is created.  
-3. It's copied to clipboard, or for multiple requests, they’re aggregated into a `.sh`.
+Edit the `InvokerConfig.json` according to your setup. Each entry in this file defines:
 
-## Example Tools Supported
+- `tool` – The CLI tool (e.g. dosfiner, sqlmap).
+- `name` – Display label in Burp's context menu.
+- `template` – Command template using placeholders.
 
-- **dosfiner**: concurrency-based stress tool (Go)  
-- **sqlmap**: automated SQL injection tester (Python)  
-- **ffuf**: fuzzing file paths or parameters (Go)  
-- **nuclei**: template-based vulnerability scanner (Go)  
-- **tplmap**: server-side template injection tester (Python)  
+#### ⚠️ Windows Users
+Default config is for Linux/macOS. Modify `global_raw_folder` to a writable directory, e.g.:
 
-*(You can also add your own tools by editing InvokerConfig.json.)*
+```json
+"global_raw_folder": "C:\pentest\invoker"
+```
 
-## Configuration (InvokerConfig.json)
-- The extension reads a local JSON file specifying each tool’s name, "template" placeholders, etc.
-- For instance:
-  ```json
-  [
-    {
-      "tool": "dosfiner",
-      "name": "Doser raw",
-      "template": "go run dosfiner.go -r \"{{RAW_PATH}}\" -t 9999"
-    },
-    {
-      "tool": "sqlmap",
-      "name": "sqlmap basic",
-      "template": "sqlmap -u \"{{URL}}\" --force-ssl --batch"
-    }
-  ]
+Specify full paths for executables:
+
+```json
+"template": "C:\tools\sqlmap\sqlmap.py -u \"{{URL}}\""
+```
+
+## 🔖 Supported Placeholders
+
+| Placeholder         | Description                                               |
+|---------------------|-----------------------------------------------------------|
+| `{{HOST}}`          | Target hostname or IP                                     |
+| `{{URL}}`           | Full request URL                                          |
+| `{{PROTOCOL}}`      | Protocol (`http` or `https`)                              |
+| `{{PORT}}`          | Port number                                               |
+| `{{RAW_PATH}}`      | Path to saved raw request file                            |
+| `{{HEADERS[-H]}}`   | All request headers formatted with `-H`                   |
+| `{{BODY}}`          | Request body (for POST requests)                          |
+| `{{FORCE_SSL}}`     | Adds SSL enforcement flag                                 |
+| `{{FFUF_URL}}`      | URL tailored for fuzzing with ffuf                        |
+| `{{OUTPUT}}`        | Path for saving the tool’s output                         |
+| `{{METHOD_SWITCH}}` | Method flag (`-g` for GET, `-p` for POST)                 |
+|---------------------|-----------------------------------------------------------|
+
+## 📌 Example InvokerConfig.json
+
+```json
+[
+  {"global_raw_folder": "/tmp/{{HOST}}"},
+  {
+    "name": "dosfiner auto GET/POST",
+    "tool": "dosfiner",
+    "template": "go run dosfiner.go {{METHOD_SWITCH}} -u \"{{URL}}\" -d \"{{BODY}}\" {{FORCE_SSL}} {{HEADERS[-H]}} -t 999 -proxy \"http://127.0.0.1:8080\""
+  },
+  {
+    "name": "sqlmap auto",
+    "tool": "sqlmap",
+    "template": "sqlmap -u \"{{URL}}\" {{HEADERS[-H]}} --batch --level=5 --risk=3 --tables"
+  }
+]
+```
+
+## 🚩 Usage Examples
+
+### Single Request (Repeater Tab)
+
+1. Right-click request → **Invoker Extension**.
+2. Choose the desired tool (e.g., "dosfiner auto GET/POST").
+3. Generated command is copied to clipboard, ready to paste into terminal.
+
+### Bulk Requests (Target Tab)
+
+1. Select multiple requests → Right-click → **Invoker Extension**.
+2. Invoker generates a `.sh` script containing commands for each request.
+3. Path to `.sh` script is copied to clipboard for quick access.
+
+### Authenticated Requests
+
+1. Select a request with valid authentication (cookies, tokens) → Right-click → **Set as Authenticated Request**.
+2. Invoker automatically includes these headers in subsequent commands.
+
+## 🔥 Troubleshooting
+
+- **Windows Configuration:** Ensure `global_raw_folder` points to a writable directory.
+- **CLI Path Issues:** Always specify full paths on Windows, e.g., `C:\tools\nuclei.exe`.
+
