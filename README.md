@@ -60,7 +60,6 @@ Specify full paths for executables:
 | `{{FFUF_URL}}`      | URL tailored for fuzzing with ffuf                        |
 | `{{OUTPUT}}`        | Path for saving the tool’s output                         |
 | `{{METHOD_SWITCH}}` | Method flag (`-g` for GET, `-p` for POST)                 |
-|---------------------|-----------------------------------------------------------|
 
 ## 📌 Example InvokerConfig.json
 
