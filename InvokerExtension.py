@@ -12,7 +12,6 @@ import codecs
 from burp import IBurpExtender
 from burp import IContextMenuFactory
 from burp import IHttpRequestResponse
-
 from javax.swing import JMenuItem, JOptionPane
 from java.awt import Toolkit
 from java.awt.datatransfer import StringSelection
@@ -33,20 +32,15 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         self._helpers = callbacks.getHelpers()
         self._callbacks.setExtensionName("Invoker Extension")
 
-        print("=====================================================")
-        print(" Invoker - by Paweł Zdunek (AFINE)")
-        print("=====================================================")
-
         self.base_path = self.determineBasePath()
-
         self.global_raw_folder_template = "/tmp/{{HOST}}"
-
         self.commands_config = []
         self.authenticatedHeaders = None
-
         self.loadConfigFromFile()
         callbacks.registerContextMenuFactory(self)
-        return
+        print("=====================================================")
+        print(" Invoker - by Pawel Zdunek (AFINE)")
+        print("=====================================================")
 
     def determineBasePath(self):
         try:
@@ -60,38 +54,24 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
 
     def loadConfigFromFile(self):
         json_path = os.path.join(self.base_path, "InvokerConfig.json")
-        print("[InvokerExtension] Attempting to load config from:", json_path)
-
         try:
             with open(json_path, "r") as f:
                 data = f.read()
             parsed = json.loads(data)
-
             if not isinstance(parsed, list):
-                print("[InvokerExtension] JSON top-level not a list => no config loaded.")
                 self.commands_config = []
                 return
-
             if len(parsed) > 0 and "global_raw_folder" in parsed[0]:
                 self.global_raw_folder_template = parsed[0]["global_raw_folder"]
                 self.commands_config = parsed[1:]
             else:
                 self.commands_config = parsed
-
-            print("[InvokerExtension] global_raw_folder_template =", self.global_raw_folder_template)
-            print("[InvokerExtension] Number of tool entries:", len(self.commands_config))
-
-        except Exception as e:
-            print("[InvokerExtension] Could not load InvokerConfig.json:", e)
+        except:
             self.commands_config = []
 
-    #
-    # IContextMenuFactory
-    #
     def createMenuItems(self, invocation):
         menu_items = ArrayList()
         tool_flag = invocation.getToolFlag()
-
         if tool_flag == self._callbacks.TOOL_REPEATER:
             set_auth = JMenuItem("Set as Authenticated Request",
                 actionPerformed=lambda x, inv=invocation: self.setAsAuthenticatedRequest(inv)
@@ -113,7 +93,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                         actionPerformed=lambda x, e=entry, inv=invocation: self.onMenuClickRepeater(inv, e)
                     )
                     menu_items.add(menu_item)
-
         elif tool_flag == self._callbacks.TOOL_TARGET:
             if len(self.commands_config) == 0:
                 dummy = JMenuItem("[Invoker] No config entries found")
@@ -127,7 +106,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                         actionPerformed=lambda x, e=entry, inv=invocation: self.onMenuClickTargets(inv, e)
                     )
                     menu_items.add(menu_item)
-
         return menu_items
 
     def setAsAuthenticatedRequest(self, invocation):
@@ -137,25 +115,20 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         ihrr = messages[0]
         if not ihrr:
             return
-
         req_info = self._helpers.analyzeRequest(ihrr)
         headers = req_info.getHeaders()
-
         user_headers = []
         for h in headers[1:]:
             if h.lower().startswith("content-length"):
                 continue
             user_headers.append(h)
-
         self.authenticatedHeaders = user_headers
         self.showInfoDialog("Authenticated Request set.\nThese headers will be used for future requests in Targets tab.")
 
     def clearAuthenticatedRequest(self):
         self.authenticatedHeaders = None
         self.showInfoDialog("Authenticated Request cleared.\nNo extra headers will be added now.")
-    #
-    # Repeater => single
-    #
+
     def onMenuClickRepeater(self, invocation, config_entry):
         messages = invocation.getSelectedMessages()
         if not messages:
@@ -163,35 +136,30 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         ihrr = messages[0]
         if not ihrr:
             return
-
         result = self.buildCommandForOneRequest(ihrr, config_entry, from_target=False, warnings=None)
         if not result:
             return
         (cmd, ffuf_url) = result
-
         try:
             cb = Toolkit.getDefaultToolkit().getSystemClipboard()
             sel = StringSelection(cmd)
             cb.setContents(sel, None)
         except:
             pass
-
         self.showInfoDialog("Command copied:\n\n" + cmd)
         print("[Invoker] Repeater single command:\n" + cmd)
-
 
     def onMenuClickTargets(self, invocation, config_entry):
         messages = invocation.getSelectedMessages()
         if not messages or len(messages) == 0:
             return
-
         if len(messages) == 1:
             single = messages[0]
-            if single is not None and single.getRequest() is not None:
+            if single and single.getRequest():
                 req_info = self._helpers.analyzeRequest(single)
-                if req_info is not None:
+                if req_info:
                     url_obj = req_info.getUrl()
-                    if url_obj is not None:
+                    if url_obj:
                         path = url_obj.getPath()
                         if path == "/" or path == "":
                             host = url_obj.getHost()
@@ -204,53 +172,41 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                             site_msgs = self._callbacks.getSiteMap(prefix)
                             if site_msgs:
                                 messages = site_msgs
-
         commands = []
         warnings = []
         used_ffuf_urls = set()
-
         for ihrr in messages:
-            if ihrr is None or ihrr.getRequest() is None:
+            if not ihrr or not ihrr.getRequest():
                 continue
-
             try:
                 result = self.buildCommandForOneRequest(ihrr, config_entry, from_target=True, warnings=warnings)
             except Exception as ex:
                 warnings.append("Error building command for one request: %s" % str(ex))
                 continue
-
             if not result:
                 continue
-
             (cmd, ffuf_url) = result
-
             if ffuf_url:
                 if ffuf_url in used_ffuf_urls:
                     warnings.append("Skipping duplicate FFUF URL => %s" % ffuf_url)
                     continue
                 used_ffuf_urls.add(ffuf_url)
-
             commands.append(cmd)
-
         if not commands:
             msg = "No commands were generated."
             if warnings:
                 msg += "\n\nWarnings:\n- " + "\n- ".join(warnings)
             self.showWarnDialog(msg)
             return
-
         first_valid = messages[0]
         fi_reqinfo = self._helpers.analyzeRequest(first_valid)
         fi_host = fi_reqinfo.getUrl().getHost()
-
         final_global_folder = self.resolveGlobalFolder(fi_host)
         if not os.path.exists(final_global_folder):
             os.makedirs(final_global_folder)
-
         timestamp = int(time.time())
         filename = "invoker_commands_%d.sh" % timestamp
         full_path = os.path.join(final_global_folder, filename)
-
         file_ok = True
         try:
             with codecs.open(full_path, "w", "utf-8", errors="replace") as f:
@@ -260,7 +216,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         except Exception as e:
             file_ok = False
             warnings.append("Error writing commands file: %s" % str(e))
-
         copied_to_clipboard = False
         if file_ok:
             try:
@@ -270,70 +225,52 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                 copied_to_clipboard = True
             except Exception as e:
                 warnings.append("Error copying path to clipboard: %s" % str(e))
-
         msg = "Generated %d commands." % len(commands)
         if file_ok:
             msg += "\nSaved to %s" % full_path
         else:
             msg += "\n(No output file was created.)"
-
         if copied_to_clipboard:
             msg += "\n(Path copied to clipboard.)"
         else:
             msg += "\n(Path NOT copied to clipboard.)"
-
         if warnings:
             msg += "\n\nWarnings:\n- " + "\n- ".join(warnings)
-
         self.showInfoDialog(msg)
         print("[Invoker] Targets multi commands =>", full_path if file_ok else "(no file)")
 
-
     def buildCommandForOneRequest(self, ihrr, config_entry, from_target, warnings):
-        if ihrr is None or ihrr.getRequest() is None:
+        if not ihrr or not ihrr.getRequest():
             return None
-
         req_info = self._helpers.analyzeRequest(ihrr)
-        if req_info is None:
+        if not req_info:
             return None
         url_obj = req_info.getUrl()
-        if url_obj is None:
+        if not url_obj:
             return None
-
         proto_str = url_obj.getProtocol().lower()
         if proto_str not in ("http", "https"):
             if warnings is not None:
                 warnings.append("Skipping because protocol is not http/https: %s" % proto_str)
             return None
-
-        # PORT
         port_int = url_obj.getPort()
         if port_int == -1:
-            # fallback
             if proto_str == "https":
                 port_int = 443
             else:
                 port_int = 80
-
-        # HOST
         host_str = url_obj.getHost()
         if not self.validateHost(host_str):
             if warnings is not None:
                 warnings.append("Invalid host => %s" % host_str)
             return None
-
         proto_host_port = "%s://%s:%d" % (proto_str, host_str, port_int)
-
         url_str = self.safeUrlToString(url_obj)
-
-        # METODA
         method = req_info.getMethod()
         try:
-            method = method.encode("utf-8", "replace").decode("utf-8", "replace")
+            method = method.encode("utf-8","replace").decode("utf-8","replace")
         except:
             method = "UNKNOWN_METHOD"
-
-        # BODY
         body_offset = req_info.getBodyOffset()
         all_bytes = ihrr.getRequest()
         body = all_bytes[body_offset:]
@@ -342,31 +279,24 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         except:
             body_str = self.hexFallback(body)
         body_str_escaped = body_str.replace('"', '\\"')
-
-        # HEADERS
         orig_headers = req_info.getHeaders()
         user_headers = []
         for h in orig_headers[1:]:
             if h.lower().startswith("content-length"):
                 continue
             user_headers.append(h)
-
         if from_target and self.authenticatedHeaders is not None:
             user_headers = self.authenticatedHeaders
         elif from_target and self.authenticatedHeaders is None and warnings is not None:
             warnings.append("No Auth set => used original headers for " + url_str)
-
-        # LOGIKA
-        tool = config_entry.get("tool", "").lower()
+        tool = config_entry.get("tool","").lower()
         (method_switch, force_ssl_flag, skipTool) = self.applySmartLogic(tool, method, url_obj)
         if skipTool:
             if warnings is not None:
                 warnings.append("%s skip => method=%s at %s" % (tool, method, url_str))
             return None
-
         headers_joined_escaped = "\\n".join(user_headers).replace('"', '\\"')
-
-        cmd_tpl = config_entry.get("template", "")
+        cmd_tpl = config_entry.get("template","")
         cmd = cmd_tpl.replace("{{METHOD}}", method)
         cmd = cmd.replace("{{METHOD_SWITCH}}", method_switch)
         cmd = cmd.replace("{{URL}}", url_str)
@@ -374,7 +304,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         cmd = cmd.replace("{{HEADERS}}", headers_joined_escaped)
         cmd = cmd.replace("{{FORCE_SSL}}", force_ssl_flag)
         cmd = cmd.replace("{{PROXY_PORT}}", str(self.getProxyPort()))
-
         if "{{HOST}}" in cmd:
             cmd = cmd.replace("{{HOST}}", host_str)
         if "{{PORT}}" in cmd:
@@ -383,28 +312,23 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             cmd = cmd.replace("{{PROTOCOL}}", proto_str)
         if "{{PROTO_HOST_PORT}}" in cmd:
             cmd = cmd.replace("{{PROTO_HOST_PORT}}", proto_host_port)
-
         cmd = self.replaceHeadersMultiFlag(cmd, user_headers)
-
         ffuf_url = None
         if tool == "ffuf":
             if "{{FFUF_URL}}" in cmd:
                 fu = self.makeFfufUrl(url_obj)
                 cmd = cmd.replace("{{FFUF_URL}}", fu)
                 ffuf_url = fu
-
         if "{{OUTPUT}}" in cmd:
             out_path = self.makeOutputFilename(tool, url_obj)
             cmd = cmd.replace("{{OUTPUT}}", out_path)
-
         if "{{RAW_PATH}}" in cmd:
             raw_path = self.saveRawRequest(ihrr, from_target, user_headers)
             cmd = cmd.replace("{{RAW_PATH}}", raw_path)
-
         return (cmd, ffuf_url)
 
     def validateHost(self, host_str):
-        pattern = re.compile(r'^[A-Za-z0-9\.]+$')
+        pattern = re.compile(r'^[A-Za-z0-9.\-]+$')
         return bool(pattern.match(host_str))
 
     def safeUrlToString(self, url_obj):
@@ -412,8 +336,8 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             return "invalid_url"
         try:
             raw_java_str = url_obj.toString()
-            utf = raw_java_str.encode("utf-8", "replace")
-            safe_str = utf.decode("utf-8", "replace")
+            utf = raw_java_str.encode("utf-8","replace")
+            safe_str = utf.decode("utf-8","replace")
             return safe_str
         except:
             return "invalid_url"
@@ -432,7 +356,6 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         results_folder = os.path.join(final_folder, "results")
         if not os.path.exists(results_folder):
             os.makedirs(results_folder)
-
         path = url_obj.getPath() or "/"
         seg = path.strip("/")
         if not seg:
@@ -440,61 +363,52 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         else:
             parts = seg.split("/")
             seg = parts[-1] if parts[-1] else "root"
-
         timestamp = int(time.time())
-        rnd = random.randint(1000, 9999)
-
+        rnd = random.randint(1000,9999)
         filename = "%s_%s_%s_%d_%d" % (tool, url_obj.getHost(), seg, timestamp, rnd)
         return os.path.join(results_folder, filename)
 
     def saveRawRequest(self, ihrr, from_target, user_headers):
         req_info = self._helpers.analyzeRequest(ihrr)
-        if req_info is None:
+        if not req_info:
             return "/tmp/invoker_failed.req"
         url_obj = req_info.getUrl()
-        if url_obj is None:
+        if not url_obj:
             return "/tmp/invoker_failed.req"
-
         host = url_obj.getHost()
+        if not self.validateHost(host):
+            return "/tmp/invoker_failed.req"
         final_folder = self.resolveGlobalFolder(host)
         requests_folder = os.path.join(final_folder, "requests")
-
         try:
             if not os.path.exists(requests_folder):
                 os.makedirs(requests_folder)
-
             timestamp = int(time.time())
             rnd = random.randint(1000,9999)
             filename = "invoker_%d_%d.req" % (timestamp, rnd)
             full_path = os.path.join(requests_folder, filename)
-
             req_bytes = ihrr.getRequest()
             if not from_target:
                 with open(full_path, "wb") as f:
                     f.write(req_bytes)
             else:
                 original_headers = req_info.getHeaders()
-                if original_headers is None or len(original_headers) == 0:
+                if not original_headers or len(original_headers) == 0:
                     return "/tmp/invoker_failed.req"
-
                 start_line = original_headers[0]
                 body_offset = req_info.getBodyOffset()
                 body_bytes = req_bytes[body_offset:]
-
                 lines = [start_line]
                 for h in user_headers:
                     if h.lower().startswith("content-length"):
                         continue
                     lines.append(h)
                 top = "\r\n".join(lines) + "\r\n\r\n"
-
                 with open(full_path, "wb") as f:
-                    f.write(top.encode("utf-8", "replace"))
+                    f.write(top.encode("utf-8","replace"))
                     f.write(body_bytes)
-
             return full_path
-        except Exception as e:
-            print("[InvokerExtension] Error saving raw request:", e)
+        except:
             return "/tmp/invoker_failed.req"
 
     def resolveGlobalFolder(self, host):
@@ -504,10 +418,8 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         method_switch = ""
         force_ssl_flag = ""
         skipTool = False
-
         is_https = (url_obj.getProtocol().lower() == "https")
         t = tool.lower()
-
         if t == "dosfiner":
             meth_up = method.upper()
             if meth_up == "GET":
@@ -515,26 +427,20 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             elif meth_up == "POST":
                 method_switch = "-p"
             else:
-                # fallback GET
                 method_switch = "-g"
             if is_https:
                 force_ssl_flag = "-force-ssl"
-
         elif t == "sqlmap":
             if is_https:
                 force_ssl_flag = "--force-ssl"
-
         elif t == "ffuf":
             if is_https:
                 force_ssl_flag = "-ssl"
-
         elif t == "nuclei":
             if is_https:
                 force_ssl_flag = "--force-ssl"
-
         elif t == "tplmap":
             pass
-
         return (method_switch, force_ssl_flag, skipTool)
 
     def makeFfufUrl(self, url_obj):
@@ -542,15 +448,12 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
         host = url_obj.getHost()
         port = url_obj.getPort()
         path = url_obj.getPath() or "/"
-
         if port == -1:
             base = "%s://%s" % (protocol, host)
         else:
             base = "%s://%s:%d" % (protocol, host, port)
-
         if path == "/" or not path:
             return base + "/FUZZ"
-
         idx = path.rfind("/")
         if idx == -1:
             return base + "/FUZZ"
@@ -590,21 +493,11 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
 
     def showInfoDialog(self, msg):
         safe_msg = self.safeStringForDialog(msg)
-        JOptionPane.showMessageDialog(
-            None,
-            safe_msg,
-            "InvokerExtension",
-            JOptionPane.INFORMATION_MESSAGE
-        )
+        JOptionPane.showMessageDialog(None, safe_msg, "InvokerExtension", JOptionPane.INFORMATION_MESSAGE)
 
     def showWarnDialog(self, msg):
         safe_msg = self.safeStringForDialog(msg)
-        JOptionPane.showMessageDialog(
-            None,
-            safe_msg,
-            "InvokerExtension",
-            JOptionPane.WARNING_MESSAGE
-        )
+        JOptionPane.showMessageDialog(None, safe_msg, "InvokerExtension", JOptionPane.WARNING_MESSAGE)
 
     def safeStringForDialog(self, txt):
         try:
@@ -612,8 +505,9 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
                 return "None"
             if not isinstance(txt, basestring):
                 txt = str(txt)
-            tmp = txt.encode("utf-8", "replace")
-            safe_txt = tmp.decode("utf-8", "replace")
+            tmp = txt.encode("utf-8","replace")
+            safe_txt = tmp.decode("utf-8","replace")
             return safe_txt
         except:
             return "ConversionError"
+
