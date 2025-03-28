@@ -36,13 +36,13 @@ Edit the `InvokerConfig.json` according to your setup. Each entry in this file d
 Default config is for Linux/macOS. Modify `global_raw_folder` to a writable directory, e.g.:
 
 ```json
-"global_raw_folder": "C:\pentest\invoker"
+"global_raw_folder": "C:\\pentest\\invoker"
 ```
 
 Specify full paths for executables:
 
 ```json
-"template": "C:\tools\sqlmap\sqlmap.py -u \"{{URL}}\""
+"template": "C:\\tools\\sqlmap\\sqlmap.py -u \"{{URL}}\""
 ```
 
 ## 🔖 Supported Placeholders
