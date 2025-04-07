@@ -452,16 +452,11 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             base = "%s://%s" % (protocol, host)
         else:
             base = "%s://%s:%d" % (protocol, host, port)
-        if path == "/" or not path:
-            return base + "/FUZZ"
-        idx = path.rfind("/")
-        if idx == -1:
+        stripped = path.rstrip("/")
+        if stripped == "":
             return base + "/FUZZ"
         else:
-            dir_part = path[:idx]
-            if not dir_part.startswith("/"):
-                dir_part = "/" + dir_part
-            return base + dir_part + "/FUZZ"
+            return base + stripped + "/FUZZ"
 
     def replaceHeadersMultiFlag(self, cmd, headers_list):
         pattern = re.compile(r'{{HEADERS\[(.*?)\]}}')
@@ -510,4 +505,3 @@ class BurpExtender(IBurpExtender, IContextMenuFactory):
             return safe_txt
         except:
             return "ConversionError"
-
